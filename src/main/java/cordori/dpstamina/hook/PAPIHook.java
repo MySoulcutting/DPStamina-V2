@@ -8,24 +8,58 @@ import me.clip.placeholderapi.PlaceholderAPI;
 import me.clip.placeholderapi.expansion.PlaceholderExpansion;
 import org.bukkit.entity.Player;
 
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiFunction;
 
 public class PAPIHook extends PlaceholderExpansion {
+
+    // 使用Map来映射类型和处理函数
+    private static final Map<String, BiFunction<PlayerData, String, String>> MAP_HANDLERS = new ConcurrentHashMap<>();
+
+    static {
+        // 初始化映射关系
+        MAP_HANDLERS.put("usedaycount", (data, key) -> String.valueOf(data.getMapCountMap().get(key).getDayCount()));
+        MAP_HANDLERS.put("useweekcount", (data, key) -> String.valueOf(data.getMapCountMap().get(key).getWeekCount()));
+        MAP_HANDLERS.put("usemonthcount", (data, key) -> String.valueOf(data.getMapCountMap().get(key).getMonthCount()));
+
+        MAP_HANDLERS.put("remaindaycount", (data, key) -> calculateRemaining(
+                data.getMapCountMap().get(key).getDayCount(),
+                ConfigManager.mapMap.get(key).getDayLimit()));
+
+        MAP_HANDLERS.put("remainweekcount", (data, key) -> calculateRemaining(
+                data.getMapCountMap().get(key).getWeekCount(),
+                ConfigManager.mapMap.get(key).getWeekLimit()));
+
+        MAP_HANDLERS.put("remainmonthcount", (data, key) -> calculateRemaining(
+                data.getMapCountMap().get(key).getMonthCount(),
+                ConfigManager.mapMap.get(key).getMonthLimit()));
+
+        MAP_HANDLERS.put("daylimit", (data, key) -> String.valueOf(ConfigManager.mapMap.get(key).getDayLimit()));
+        MAP_HANDLERS.put("weeklimit", (data, key) -> String.valueOf(ConfigManager.mapMap.get(key).getWeekLimit()));
+        MAP_HANDLERS.put("monthlimit", (data, key) -> String.valueOf(ConfigManager.mapMap.get(key).getMonthLimit()));
+        MAP_HANDLERS.put("cost", (data, key) -> String.valueOf(ConfigManager.mapMap.get(key).getCost()));
+        MAP_HANDLERS.put("mapname", (data, key) -> ConfigManager.mapMap.get(key).getMapName());
+        MAP_HANDLERS.put("ticket", (data, key) -> ConfigManager.mapMap.get(key).getTicket());
+        MAP_HANDLERS.put("allowuniversal", (data, key) -> String.valueOf(ConfigManager.mapMap.get(key).isAllowUniversal()));
+    }
 
     @Override
     public boolean persist() {
         return true;
     }
-    @Override
-    public boolean canRegister() {
-        return true;
-    }
+
     @Override
     public String getAuthor() {
         return "Cordori";
     }
+
     @Override
-    public String getVersion() { return Main.inst.getDescription().getVersion(); }
+    public  String getVersion() {
+        return Main.inst.getDescription().getVersion();
+    }
+
     @Override
     public String getIdentifier() {
         return "dps";
@@ -33,118 +67,69 @@ public class PAPIHook extends PlaceholderExpansion {
 
     @Override
     public String onPlaceholderRequest(Player player, String identifier) {
+        if (player == null || identifier.isEmpty()) return null;
 
-        if (player == null || identifier == null || identifier.isEmpty()) return null;
         UUID uuid = player.getUniqueId();
-        if(!ConfigManager.dataMap.containsKey(uuid)) return null;
         PlayerData playerData = ConfigManager.dataMap.get(uuid);
+        if (playerData == null) return null;
 
-        if(identifier.equalsIgnoreCase("stamina")) {
-            double stamina = playerData.getStamina();
-            return String.valueOf(stamina);
+        String lowerId = identifier.toLowerCase();
+        switch (lowerId) {
+            case "stamina":
+                return formatDouble(playerData.getStamina());
+            case "limit":
+                return getGroupLimit(player);
+            case "recover":
+                return processRecover(player);
+            case "group":
+                return ConfigManager.getGroup(player);
+            case "universalticket":
+                return ConfigManager.universalTicket;
         }
 
-        else if(identifier.equalsIgnoreCase("limit")) {
-            String group = ConfigManager.getGroup(player);
-            double limit = ConfigManager.groupMap.get(group).getLimit();
-            return String.valueOf(limit);
-        }
-
-        else if(identifier.equalsIgnoreCase("recover")) {
-            String group = ConfigManager.getGroup(player);
-            String recover = ConfigManager.groupMap.get(group).getRecover();
-            return PAPIHook.onPAPIProcess(player, recover);
-        }
-
-        else if(identifier.equalsIgnoreCase("group")) {
-            return ConfigManager.getGroup(player);
-        }
-
-        else if(identifier.equalsIgnoreCase("universalTicket")) {
-            return ConfigManager.universalTicket;
-        }
-
-
-
-        String[] strings = identifier.split("_");
-        if(strings.length < 2) return null;
-        if(ConfigManager.mapMap.containsKey(strings[0])) {
-            String key = strings[0];
-            String type = strings[1];
-            if(type.equalsIgnoreCase("useDayCount")) {
-                int count = playerData.getMapCountMap().get(key).getDayCount();
-                return String.valueOf(count);
-            }
-
-            else if(type.equalsIgnoreCase("useWeekCount")) {
-                int count = playerData.getMapCountMap().get(key).getWeekCount();
-                return String.valueOf(count);
-            }
-
-            else if(type.equalsIgnoreCase("useMonthCount")) {
-                int count = playerData.getMapCountMap().get(key).getMonthCount();
-                return String.valueOf(count);
-            }
-
-            else if(type.equalsIgnoreCase("remainDayCount")) {
-                int count = playerData.getMapCountMap().get(key).getDayCount();
-                int limit = ConfigManager.mapMap.get(key).getDayLimit();
-                int value = limit - count;
-                return String.valueOf(value);
-            }
-
-            else if(strings[1].equalsIgnoreCase("remainWeekCount")) {
-                int count = playerData.getMapCountMap().get(key).getWeekCount();
-                int limit = ConfigManager.mapMap.get(key).getWeekLimit();
-                int value = limit - count;
-                return String.valueOf(value);
-            }
-
-            else if(strings[1].equalsIgnoreCase("remainMonthCount")) {
-                int count = playerData.getMapCountMap().get(key).getMonthCount();
-                int limit = ConfigManager.mapMap.get(key).getMonthLimit();
-                int value = limit - count;
-                return String.valueOf(value);
-            }
-
-            else if(type.equalsIgnoreCase("dayLimit")) {
-                int limit = ConfigManager.mapMap.get(key).getDayLimit();
-                return String.valueOf(limit);
-            }
-
-            else if(strings[1].equalsIgnoreCase("weekLimit")) {
-                int limit = ConfigManager.mapMap.get(key).getWeekLimit();
-                return String.valueOf(limit);
-            }
-
-            else if(strings[1].equalsIgnoreCase("monthLimit")) {
-                int limit = ConfigManager.mapMap.get(key).getMonthLimit();
-                return String.valueOf(limit);
-            }
-
-            else if(type.equalsIgnoreCase("cost")) {
-                double cost = ConfigManager.mapMap.get(key).getCost();
-                return String.valueOf(cost);
-            }
-
-            else if(strings[1].equalsIgnoreCase("mapName")) {
-                return ConfigManager.mapMap.get(key).getMapName();
-            }
-
-            else if(strings[1].equalsIgnoreCase("ticket")) {
-                return ConfigManager.mapMap.get(key).getTicket();
-            }
-
-            else if(strings[1].equalsIgnoreCase("allowUniversal")) {
-                return String.valueOf(ConfigManager.mapMap.get(key).isAllowUniversal());
-            }
+        if (lowerId.contains("_")) {
+            return handleMapRelated(playerData, identifier);
         }
 
         return null;
     }
 
+    private String handleMapRelated(PlayerData playerData, String identifier) {
+        String[] parts = identifier.split("_", 2);
+        if (parts.length != 2) return null;
+
+        String mapKey = parts[0];
+        String queryType = parts[1].toLowerCase();
+
+        if (!ConfigManager.mapMap.containsKey(mapKey)) return null;
+
+        BiFunction<PlayerData, String, String> handler = MAP_HANDLERS.get(queryType);
+        return handler != null ? handler.apply(playerData, mapKey) : null;
+    }
+
+    private static String calculateRemaining(int used, int limit) {
+        return String.valueOf(Math.max(limit - used, 0));
+    }
+
+    private static String formatDouble(double value) {
+        return value == (int) value ? String.valueOf((int) value) : String.valueOf(value);
+    }
+
+    private static String getGroupLimit(Player player) {
+        String group = ConfigManager.getGroup(player);
+        return ConfigManager.groupMap.containsKey(group) ?
+                formatDouble(ConfigManager.groupMap.get(group).getLimit()) :
+                "0";
+    }
+
+    private static String processRecover(Player player) {
+        String group = ConfigManager.getGroup(player);
+        return ConfigManager.groupMap.containsKey(group) ?
+                onPAPIProcess(player, ConfigManager.groupMap.get(group).getRecover()) :
+                "0";
+    }
+
     public static String onPAPIProcess(Player player, String str) {
         return PlaceholderAPI.setPlaceholders(player, str);
     }
-
 }
